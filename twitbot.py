@@ -37,8 +37,8 @@ def make_session(strConsumer_key, strConsumer_secret):
     return session
 
 
+
 def dictTweet(session, data):
-   #ipdb.set_trace()
     r = session.post('statuses/update.json', 
                      data={'status':data['status'],
                            'in_reply_to_status_id':`data['in_reply_to_status_id']`})
@@ -48,69 +48,108 @@ def dictTweet(session, data):
         print 'dictTweet: Something went wrong! Status code is {0}'.format(r.status_code)
         print 'dictTweet: dumping the body of the return {0}'.format(r.text)
 
+class TweetScraper:
+    """ Scrape tweets, pickleable """ 
+    def __init__(self, strConsumer_key, strConsumer_secret):
+        print "TweetScraper: Initializing an account to scrape tweets on."
+        self.session = make_session(strConsumer_key, strConsumer_secret)
+        self.strSn = ''
+        self.strSince_id = ''
+        self.strFilter = '' #exclude tweets containing the given string
+        self.intMax_tweets = 0 #maximum number of tweets to go back
+        return
 
-def write_tweets(session, strAppend, q):
-    while True:
-        print "write_tweets: Blocking to get a new tweet."
-        data = q.get(True, None)
-        data['status'] = ''.join([data['status'], strAppend])
-        print "write_tweets: Tweeting the following: {0}".format(data)
-        dictTweet(session, data)
+    def configure(self):
+        print "Settings for the scraping account\n-----------"
+        self.strSn = raw_input("What screenname do you want to retweet? ")
+        self.strSince_id = raw_input("What is the id of the most recent tweet you'd like to scrape? [1] ") 
+        self.intMax_tweets = raw_input("How many old tweets should be processed? [20] ")
+        if not self.strSince_id:
+            self.strSince_id = '1'
+        if not self.intMax_tweets :
+            self.intMax_tweets = 0
+        return
+    
 
-
-def scrape_tweets(session, strSn, strSince_id, q):
-    while True:
-        print 'scrape_tweets: Scraping tweets in an infinite loop'
-        posts = session.get('statuses/user_timeline.json',
-                            params = {'screen_name':strSn,
-                                      'since_id':strSince_id,
-                                      'count':20,
-                                      'exclude_replies':'true'}).json()
-        for post in reversed(posts):
-            print type(post)
-            passed = {'status':post['text'],
-                      'in_reply_to_status_id':post['in_reply_to_status_id'],
-                      'place_id':post['geo']}
+    def run(self, q):
+        while True:
+            print 'scrape_tweets: Scraping tweets in an infinite loop'
+            posts = self.session.get('statuses/user_timeline.json',
+                                     params = {'screen_name':self.strSn,
+                                               'since_id':self.strSince_id,
+                                               'count':20,
+                                               'exclude_replies':'false'}).json()
+            for post in reversed(posts):
+                print type(post)
+                passed = {'status':post['text'],
+                          'in_reply_to_status_id':post['in_reply_to_status_id'],
+                          'place_id':post['geo']}
                       
-            q.put(passed)
-            strSince_id = post['id']
+                if not self.strFilter in passed['status']:
+                    q.put(passed)
+                self.strSince_id = post['id']
         
-        time.sleep(6) #the API rate-limits requests more frequent than every 5 seconds
-        #take a break if there aren't any new tweets coming in
-        if not posts:
-            time.sleep(180)
-            
+
+                #fix timing: the API rate limits requests more frequent than every 5 seconds
+                time.sleep(6)
+                #take a break if ther aren't any new posts coming in
+                if not posts:
+                    time.sleep(180)
+                    return
+
+class TweetWriter:
+    def __init__(self, strConsumer_key, strConsumer_secret):
+        print "TweetWriter: Initializing an account to write tweets from."
+        self.session = make_session(strConsumer_key, strConsumer_secret)
+        self.strAppend = ''
+        return
+
+    def configure(self):
+            print "Settings for the tweeting account\n-----------"
+            self.strAppend = raw_input("Is there anything you want me to append" +
+                                       " to these tweets? [blank for nothing] ")
+            return
+
+    def run(self, q):
+        while True:
+            print "write_tweets: Blocking to get a new tweet."
+            data = q.get(True, None)
+            data['status'] = ' '.join([data['status'], self.strAppend])
+            print "write_tweets: Tweeting the following: {0}".format(data)
+            dictTweet(self.session, data)
+        
+
 
 def main():
 
-    # scraping account settings
-    print "Settings for the scraping account\n-----------"
-    print "Initialize an account to scrape tweets on:"
-    sessScraper = make_session('juKgzsgl5LYnBKocnq4mg',
+    # set up the scraping account
+    tsScraper = TweetScraper('juKgzsgl5LYnBKocnq4mg',
                                'vIw1vUec4bMkyL5hQpCISe3svTf767suzXyVh6YKA')
-    strSn = raw_input("What screenname do you want to retweet? ")
-    strSince_id = raw_input("What is the id of the most recent tweet you'd like to scrape? [1] ")
-
-    if strSince_id == '':
-        strSince_id = '1'
+    tsScraper.configure()
 
     # tweeting account settings
-    print "Settings for the tweeting account\n-----------"
-    print "Initialize an account to tweet from:"
-    sessTweeter = make_session('C2XWyJSzHpVx8iT7Bbabsw',
-                               'uoxWh9wj4pDExn1GoQ5P4e5NdVAFATdAnYdao1Musw')
-    strAppend = raw_input("Is there anything you want me to append" +
-                          " to these tweets? [blank for nothing] ")
+    twWriter = TweetWriter('C2XWyJSzHpVx8iT7Bbabsw',
+                           'uoxWh9wj4pDExn1GoQ5P4e5NdVAFATdAnYdao1Musw')
+    twWriter.configure()
 
+    tsScraper.strFilter = twWriter.strAppend
 
     # initialize the main routine
     q = Queue()
-    p1 = Process(target = write_tweets, args=(sessTweeter, strAppend, q))
-    p2 = Process(target = scrape_tweets, args=(sessScraper, strSn, strSince_id, q))
+    p1 = Process(target = tsScraper.run, args=(q,))
+    p2 = Process(target = twWriter.run, args=(q,))
     p2.start()
     p1.start()
-    pass
-#    scrape_tweets(sessScraper, strSn, strSince_id, q)
+
+    while True:
+        print "Enter 'q' at any time to quit."
+        input = raw_input('? ')
+        if input == 'q':
+            p1.terminate()
+            p2.terminate()
+            
+    
+    return
     
 if __name__ == '__main__':
     main()
