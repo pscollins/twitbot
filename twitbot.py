@@ -16,25 +16,28 @@ def make_session(strConsumer_key, strConsumer_secret,
         authorize_url='https://api.twitter.com/oauth/authorize',
         base_url='https://api.twitter.com/1.1/')
 
-    if not (strRequest_token or strRequest_secret, intPin):
-        request_token, request_token_secret = twitter.get_request_token()
-        authorize_url = twitter.get_authorize_url(request_token)
+    if not (strRequest_token or strRequest_secret or intPin):
+        strRequest_token, strRequest_secret = twitter.get_request_token()
+        authorize_url = twitter.get_authorize_url(strRequest_token)
         while(True):
             print 'Visit this URL in your browser: ' + authorize_url + '\n'
-            pin = raw_input('Enter PIN from browser: ')
+            intPin = raw_input('Enter PIN from browser: ')
 
             try:
-                session = twitter.get_auth_session(request_token, 
-                                                   request_token_secret, method='POST',
-                                                   data={'oath_verifier':pin})
+                session = twitter.get_auth_session(strRequest_token, 
+                                                   strRequest_secret, method='POST',
+                                                   data={'oath_verifier':intPin})
                 break
             except KeyError:
                 print "You need to enter a PIN!"
     else:
-        session = twitter.get_auth_session(request_token, 
-                                           request_token_secret, method='POST',
-                                           data={'oath_verifier':pin})
-                
+        print strRequest_token
+        print strRequest_secret
+        print intPin
+        session = twitter.get_auth_session(strRequest_token, 
+                                           strRequest_secret, method='POST',
+                                           data={'oath_verifier':intPin})
+
 
     intStatus_code = session.get('account/verify_credentials.json').status_code
     if intStatus_code == 200:
@@ -43,7 +46,7 @@ def make_session(strConsumer_key, strConsumer_secret,
         print 'Something went wrong, status code: {0}'.format(intStatus_code)
         #ipdb.set_trace()
 
-    return session, strRequest_token, strRequest_secret, intPin
+    return (session, strRequest_token, strRequest_secret, intPin)
 
 
 
@@ -57,7 +60,7 @@ def dictTweet(session, data):
         print 'dictTweet: Something went wrong! Status code is {0}'.format(r.status_code)
         print 'dictTweet: dumping the body of the return {0}'.format(r.text)
 
-def initializeProcesses(tsScraper, twWrtiter):
+def initializeProcesses(tsScraper, twWriter):
     # set up the two processes and return a tuple containing them
     q = Queue()
     p1 = Process(target = tsScraper.run, args=(q,))
@@ -67,13 +70,18 @@ def initializeProcesses(tsScraper, twWrtiter):
 
     return (p1, p2)
 
-class TweetGeneric:
+class TweetGeneric(object):
     def __init__(self, strConsumer_key, strConsumer_secret, 
                  strRequest_token = '', strRequest_secret = '', intPin = ''):
-        self.session, self.strRequest_token, self.strRequest_secret, 
-        self.intPin = make_session(strConsumer_key, 
-                                   strConsumer_secret, strRequest_token, 
-                                   strRequest_secret, intPin)
+        ret = make_session(strConsumer_key, strConsumer_secret, strRequest_token, 
+            strRequest_secret, intPin)
+        print ret
+        self.strConsumer_key = strConsumer_key
+        self.strConsumer_secret = strConsumer_secret
+        self.session = ret[0]
+        self.strRequest_token = ret[1] 
+        self.strRequest_secret = ret[2]
+        self.intPin = ret[3]
         return
 
 class TweetScraper(TweetGeneric):
@@ -81,7 +89,7 @@ class TweetScraper(TweetGeneric):
                  strRequest_token = '', strRequest_secret = '', intPin = ''):
         print "TweetScraper: Initializing an account to scrape tweets on."
         TweetGeneric.__init__(self, strConsumer_key, strConsumer_secret, 
-                              strRequest_token, strRequest_secret, intPin)
+                               strRequest_token, strRequest_secret, intPin)
         self.strSn = ''
         self.strSince_id = ''
         self.strFilter = '' #exclude tweets containing the given string
@@ -119,12 +127,12 @@ class TweetScraper(TweetGeneric):
                 self.strSince_id = post['id']
         
 
-                #fix timing: the API rate limits requests more frequent than every 5 seconds
-                time.sleep(6)
-                #take a break if ther aren't any new posts coming in
-                if not posts:
-                    time.sleep(180)
-                    return
+            #fix timing: the API rate limits requests more frequent than every 5 seconds
+            time.sleep(6)
+            #take a break if ther aren't any new posts coming in
+            if not posts:
+                time.sleep(180)
+                return
 
 class TweetWriter(TweetGeneric):
     def __init__(self, strConsumer_key, strConsumer_secret, 
@@ -152,11 +160,16 @@ class TweetWriter(TweetGeneric):
 
 def main():
     config = configparser.ConfigParser()
-    if isfile('.config'):
-        config.read('.config')
+    if not isfile('.config'):
+        open('.config', 'w').close()
+    config.read('.config')
+
+    #TODO: SPLIT THIS OFF INTO SUBROUTINES
+
+    if config.sections():
         def localAssign(strType):
             return TweetScraper(config[strType]['strConsumer_key'],
-                                config[strType]['strConsumer_secret']
+                                config[strType]['strConsumer_secret'],
                                 config[strType]['strRequest_token'],
                                 config[strType]['strRequest_secret'],
                                 config[strType]['intPin'])
@@ -170,7 +183,6 @@ def main():
         tsWriter.strAppend = config['WRITER']['strAppend']
 
     else:
-        open('.config').close()
         tsScraper = TweetScraper('juKgzsgl5LYnBKocnq4mg',
                                  'vIw1vUec4bMkyL5hQpCISe3svTf767suzXyVh6YKA')
         tsScraper.configure()
@@ -194,6 +206,8 @@ def main():
         if input == 's':
             config['SCRAPER'] = tsScraper.__dict__
             config['WRITER'] = twWriter.__dict__
+            with open('.config', 'w') as configfile:
+                config.write(configfile)
         if input == 'm':
             c = raw_input('Modify [s]craper or [w]riter? ')
             if c == 's':
