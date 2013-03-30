@@ -96,6 +96,8 @@ class TweetScraper(TweetGeneric):
         self.intMax_tweets = 0 #maximum number of tweets to go back
         return
 
+    def __getstate__(self)
+
     def configure(self):
         print "Settings for the scraping account\n-----------"
         self.strSn = raw_input("What screenname do you want to retweet? ")
@@ -167,20 +169,25 @@ def main():
     #TODO: SPLIT THIS OFF INTO SUBROUTINES
 
     if config.sections():
-        def localAssign(strType):
-            return TweetScraper(config[strType]['strConsumer_key'],
-                                config[strType]['strConsumer_secret'],
-                                config[strType]['strRequest_token'],
-                                config[strType]['strRequest_secret'],
-                                config[strType]['intPin'])
-        tsScraper = localAssign('SCRAPER')
+        # def localAssign(strType):
+        #TODO: find a way to pickle an OAuth1Session object
+#             return TweetScraper(config[strType]['strConsumer_key'],
+#                                 config[strType]['strConsumer_secret'],
+#                                 config[strType]['strRequest_token'],
+#                                 config[strType]['strRequest_secret'],
+#                                 config[strType]['intPin'])
+#         tsScraper = localAssign('SCRAPER')
+        tsScraper = TweetScraper('juKgzsgl5LYnBKocnq4mg',
+                                 'vIw1vUec4bMkyL5hQpCISe3svTf767suzXyVh6YKA')
         tsScraper.strSn = config['SCRAPER']['strSn']
         tsScraper.strSince_id = config['SCRAPER']['strSince_id']
         tsScraper.strFilter = config['SCRAPER']['strFilter']
         tsScraper.intMax_tweets = config['SCRAPER']['intMax_tweets']
 
-        tsWriter = localAssign('WRITER')
-        tsWriter.strAppend = config['WRITER']['strAppend']
+#        tsWriter = localAssign('WRITER')
+        twWriter = TweetWriter('C2XWyJSzHpVx8iT7Bbabsw',
+                               'uoxWh9wj4pDExn1GoQ5P4e5NdVAFATdAnYdao1Musw')
+       tsWriter.strAppend = config['WRITER']['strAppend']
 
     else:
         tsScraper = TweetScraper('juKgzsgl5LYnBKocnq4mg',
